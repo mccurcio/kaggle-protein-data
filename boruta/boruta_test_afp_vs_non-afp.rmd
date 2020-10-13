@@ -1,0 +1,180 @@
+---
+title: "Carry out Boruta Feature Selection for Kaggle Dataset; Anti-Freeze Protein Classification"
+author: "mccurcio"
+date: "6/14/2020"
+output: html_document
+---
+
+### This is Rmarkdown file shows the preliminary Exploratory Data Analysis (EDA) for AFP vs Non-AFP; Anti-Freeze Protein Classification
+
+The goal of the Rmarkdown document is to carry out an EDA for the datasets AFP and Non_AFP. This is a binary classification problem which will be investigated further.
+
+
+
+| No. | File Name     | Abbreviation | Observations | Columns (Features) | Missing Values |
+| :-- | :------------ | -----------: | -----------: | -----------------: | -------------: |
+| 1   | AFP11.csv     | afp          |          481 |         1742(1740) |              0 |
+| 2   | Non-AFP11.csv | non_afp      |         9191 |         1742(1740) |              0 |
+  
+
+There columns appear to be set up as:  
+
+- Column X1 - Protein ID (Uniprot Accession numbers?)  
+- Column X2 - (0, 1) indicator variable must be set  
+- Columns X3-X23 - Amino acid percent Composition(AAC)  
+- Columns x24-x1742 - Dipeptide Composition, etc.  
+
+This data is found at https://www.kaggle.com/rafay12/anti-freeze-protein-classification/metadata.
+
+
+### Import libraries
+```{r message=FALSE, warning=FALSE}
+library(easypackages)
+libraries("readr", "caret", "doMC", "Boruta", "xgboost", "Metrics")
+```
+
+### Load data
+```{r message=FALSE, warning=FALSE}
+afp     <- read_csv("../AFP11.csv", col_names = FALSE,
+                    col_types = cols(X1 = col_skip()))
+non_afp <- read_csv("../Non-AFP11.csv", col_names = FALSE,
+                    col_types = cols(X1 = col_skip()))
+```
+
+### Prepare Data
+```{r}
+afp$X2 <- rep(1, 481)
+non_afp$X2 <- rep(0, 9191)
+#labels.numeric <- c(rep(1, 481), rep(0, 9191))
+
+all_afp <- rbind(afp, non_afp)
+
+# all_afp$X2 <- factor(all_afp$X2,
+#                      levels = c("0", "1"),
+#                      labels = c("NEG", "POS"))
+head(all_afp)
+```
+
+### Reduce Features by using Zero Variance and Near Zero Variance
+```{r}
+nzv <- nearZeroVar(all_afp[, -1], saveMetrics = TRUE)
+head(nzv)
+```
+
+```{r}
+sum(nzv$zeroVar == TRUE)
+
+sum(nzv$nzv == TRUE)
+
+summary(nzv$percentUnique)
+```
+
+### Generate Subset of 'all_afp' for further testing
+```{r}
+all_afp_nzv <- all_afp[c(rownames(nzv[nzv$percentUnique > 4.446,])) ]
+print(paste('Column count after cutoff:',ncol(all_afp_nzv)))
+```
+
+```{r}
+df_nzv <- cbind(as.data.frame(sapply(all_afp_nzv, as.numeric)), 
+                                         cluster = all_afp$X2)
+head(df_nzv)
+```
+
+### Evaluation of Features by using Xgboost
+```{r}
+EvaluateAUC <- function(df_nzv) {
+        CVs <- 5
+        cvDivider <- floor(nrow(df_nzv) / (CVs+1))
+        indexCount <- 1
+        outcomeName <- c('cluster')
+        predictors <- names(df_nzv)[!names(df_nzv) %in% outcomeName]
+        lsErr <- c()
+        lsAUC <- c()
+        for (cv in seq(1:CVs)) {
+                print(paste('cv',cv))
+                dataTestIndex <- c((cv * cvDivider):(cv * cvDivider + cvDivider))
+                dataTest <- df_nzv[dataTestIndex,]
+                dataTrain <- df_nzv[-dataTestIndex,]
+                
+                bst <- xgboost(data = as.matrix(dataTrain[,predictors]),
+                               label = dataTrain[,outcomeName],
+                               max.depth=6, eta = 1, verbose=0,
+                               nround=5, nthread=4, 
+                               objective = "reg:logistic")
+                
+                predictions <- predict(bst, as.matrix(dataTest[,predictors]), outputmargin=TRUE)
+                err <- rmse(dataTest[,outcomeName], predictions)
+                auc <- auc(dataTest[,outcomeName],predictions)
+                
+                lsErr <- c(lsErr, err)
+                lsAUC <- c(lsAUC, auc)
+                gc()
+        }
+        print(paste('Mean Error:',mean(lsErr)))
+        print(paste('Mean AUC:',mean(lsAUC)))
+}
+```
+
+
+### Evaluate the dataframe with near zero values cut out using Xgboost
+```{r}
+EvaluateAUC(df_nzv)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+#Start timer and doMC
+# set.seed(1000)
+# registerDoMC(cores = 10)
+# start_time <- Sys.time()
+# 
+# # Boruta
+# model_boruta <- Boruta(all_afp$X2 ~ .,
+#                        data = all_afp,
+#                        doTrace = 2,
+#                        mcAdj = TRUE)
+# 
+# # End timer and doMC
+# end_time <- Sys.time()
+# end_time - start_time
+# registerDoSEQ()
+# 
+# summary(model_boruta)
+```
+
+
+```{r}
+# cat('Random forest run on all attributes:\n')
+# print(randomForest(V4~.,data=ozo))
+# cat('Random forest run only on confirmed attributes:\n')
+# print(randomForest(ozo[,getSelectedAttributes(Bor.ozo)],ozo$V4))
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

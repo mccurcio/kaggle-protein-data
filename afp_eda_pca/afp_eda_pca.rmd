@@ -1,0 +1,322 @@
+---
+title: "Anti-freeze-protein-classification EDA & PCA"
+author: 'Matthew Curcio'
+date: '10/8/2020'
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    fig_width: 7
+    fig_height: 4.5
+    theme: readable
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(cache = TRUE,
+                      message = FALSE,
+                      warning = FALSE)
+```
+
+# Abstract
+
+# Introduction
+
+I have chosen to work with R and the Anti-freeze-protein-classification dataset. [^18]
+
+I will focus on using Zero Variance and Near-Zero Variance as a tool for reducing dimensions.
+Then move on to Principal Component Analysis where the optimum number of principal components will be determined using XGBoost as a measure. 
+
+I am new to machine learning so feedback is welcome! 
+
+There are 5 parts to my report:
+
+1. Exploratory Data Analysis
+1. Near-Zero Variance Cut-off
+1. Principal Component Analysis
+1. Conclusion
+
+[^18]: https://www.kaggle.com/rafay12/anti-freeze-protein-classification
+
+
+
+The files listed below are presumed to be a positive and negative control for anti-freeze proteins.
+
+| File Name     | Working Abbreviation | Observations | Columns (Features) | Missing Values | File Size |
+| :------------ | :------------------  | -----------: | -----------------: | -------------: | --------: |
+| AFP11.csv     |                  afp |          481 |         1742(1740) |              0 |    4.8 MB |
+| Non-AFP11.csv |              non_afp |         9191 |         1742(1740) |              0 |   91.6 MB |
+
+
+Column Variables appear to be set up as:
+
+| Column(s) | Structure | Notes / Description                           |
+| :-------: | :-------- | :-------------------------------------------- |
+|        X1 | character | Protein ID; <br> Uniprot accession numbers(?) |
+|        X2 | numerical | Column contains zeros. <br> It would be useful to change this column to a **label variable set of [0,1]** |
+|    X3:X23 | numerical | Amino acid percent composition(AAC), order unknown; <br> range = [0, 25.904] |
+| X24:X1742 | numerical | Alternative Descriptors, order unknown; <br> range = [0, 50]; <br> See Table #1 |
+
+Note 1: At this point, I am unsure how these files were derived. However these values look consistent with amino acid composition and Alternative Descriptors analysis.
+    
+Note 2: The data sets do not appear to have amino acid total count (protein length) data. I find this information useful when one encounters amino acid compositions greater than 10%. The protein length can be used as a feature but more often it is a good visual check to have.
+
+
+## Table #1: Non-Exhuastive List of Protein Descriptors:
+
+| No. | Descriptor Name                                      | Notes                          |
+| :-: | :--------------------------------------------------- | :----------------------------- |
+|  1  | Pseudo amino acid composition (PseAAC)               | K.C. Chou [^1]                 |
+|  2  | Hydrophobicity                                       | C. Tanford [^2]                |
+|  3  | Hydrophilicity                                       | T.P. Hopp [^4]                 |
+|  4  | pK1 (alpha-COOH)                                     | CRC Handbook of Chemistry [^5] |
+|  5  | pK2 (-NH3)                                           | R.M.C. Dawson [^6]             |
+|  6  | pI (at 25C)                                          | R.M.C. Dawson [^6]             |
+|  7  | Moreau-Broto Autocorrelation                         | G. Moreau, P. Broto [^7] [^19] |
+|  8  | Moran Autocorrelation                                | P. Moran [^8] [^20]            |
+|  9  | Geary Autocorrelation                                | R.C. Geary [^9]                |
+| 10  | Composition, Transition and Distribution (CTD) of AA | G. Govindan [^10]              |
+| 11  | Transition                                           | [^11]                          |
+| 12  | Distribution                                         | [^12]                          |
+| 13  | Conjoint Triad                                       | J.W. Shen [^13]                |
+| 14  | Quasi-Sequence-Order                                 | K.C. Chou [^14]                |
+| 15  | Sequence-Order-Coupling Number                       | [^15]                          |
+| 16  | Quasi-Sequence-Order Descriptors                     | [^16]                          |
+| 17  | Amphiphilic Pseudo-Amino Acid Composition            | [^17]                          |
+
+See also: ProtrWeb: http://protr.org/   https://nanx.me/papers/protr.pdf
+
+[^1]: Hong-Bin Shen, Kuo-Chen Chou. PseAAC: a flexible web-server for generating various kinds of protein pseudo amino acid composition. Analytical Biochemistry, 2008, 373: 386-388
+[^2]: C. Tanford, JACS, 1962, 84: 4240-4246
+[^4]: T.P.Hopp, K.R.Woods, PNAS, 1981, 78:3824-3828
+[^5]: CRC Handbook of Chemistry and Physics, 66th ed., CRC Press, Boca Raton, Florida, 1985
+[^6]: R.M.C. Dawson, D.C. Elliott, W.H. Elliott, K.M. Jones, Data for Biochemical Research 3rd ed., Clarendon Press Oxford (1986)
+[^7]: http://www.rguha.net/writing/notes/desc/node2.html
+[^19]: G. Moreau and P. Broto, Autocorrelation of a topological structure: A new molecular descriptor, Nouv. J. Chim. 4 (1980) 359–360
+[^8]: Moran, P. A. P. (1950), "Notes on Continuous Stochastic Phenomena". Biometrika. 37 (1): 17–23
+[^20]: https://pro.arcgis.com/en/pro-app/tool-reference/spatial-statistics/h-how-spatial-autocorrelation-moran-s-i-spatial-st.htm
+[^9]: Geary, R. C. (1954). "The Contiguity Ratio and Statistical Mapping". The Incorporated Statistician. The Incorporated Statistician. 5 (3): 115–145
+[^10]: Geetha Govindan; Achuthsankar S. Nair, Composition, Transition and Distribution (CTD) — A dynamic feature for predictions based on hierarchical structure of cellular sorting, IEEE, 16-18 Dec. 2011
+[^11]: X
+[^12]: X
+[^13]: J.W. Shen, J. Zhang, X.M. Luo, W.L. Zhu, K.Q. Yu, K.X. Chen, Y.X. Li, H.L. Jiang. Predicting Protein-protein Interactions Based Only on Sequences Information. Proceedings of the National Academy of Sciences. 007, 104, 4337-4341
+[^14]: Kuo-Chen Chou. Prediction of Protein Subcellar Locations by Incorporating Quasi-Sequence-Order Effect. Biochemical and Biophysical Research Communications, 2000, 278, 477-483
+[^15]: A
+[^16]: B
+[^17]: C
+
+**Using the Bash** command line I was able to quickly inspect the 2 datafiles. 
+
+Note 3: The dataset does not appear to have column names as the first row.
+
+# Exploratory Data Analysis
+
+## Import libraries
+```{r message=FALSE, warning=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "caret", "kableExtra", "doMC",
+          "ROCR" ,"caret" ,"ggplot2" ,"xgboost" ,"Metrics")
+```
+
+## Load data
+```{r message=FALSE, warning=FALSE}
+afp     <- read_csv("AFP11.csv", col_names = FALSE)
+non_afp <- read_csv("Non-AFP11.csv", col_names = FALSE)
+```
+
+## Check no. dimensions
+```{r}
+dim(afp)
+
+dim(non_afp)
+```
+Note 3: rows & columns
+
+## Check for missing values
+```{r}
+sum(is.na(afp))
+
+sum(is.na(non_afp))
+```
+
+Note 4: No missing values indicated.
+
+## Set indicator variable (X2) to anti-freeze-proteins (1) & Non-anti-freeze-proteins (0)
+```{r}
+afp$X2     <- rep(1, 481)  # Set indicator variable to 1 for anti-freeze-proteins
+non_afp$X2 <- rep(0, 9191) # Set indicator variable to 0 for NON-anti-freeze-proteins
+
+all_proteins <- rbind(afp, non_afp)
+
+dim(all_proteins)
+```
+
+## Amino Acid Composition: Numerical range of columns X3 - X23
+
+```{r}
+aac <- all_proteins[c(3:23)] 
+
+ranges_aac <- range(aac)
+
+ranges_aac
+```
+
+## Protein Descriptors: Numerical range of columns X24 - X1742
+
+```{r}
+dpc <- all_proteins[c(24:1742)] 
+
+ranges_dpc <- range(dpc)
+
+ranges_dpc
+```
+
+Note 5: It is recommended that all columnar variables (X3 - X1742) be normalized.
+
+# Zero Variance & Near-Zero Variance Testing
+
+## Check for Near-Zero Variance using Caret
+
+```{r}
+df <- all_proteins[c(3:1742)]
+nzv <- nearZeroVar(df, saveMetrics = TRUE)
+head(nzv)
+```
+
+## Table of Zero Variance Variables
+
+```{r}
+table(nzv$zeroVar)
+```
+
+Note 6: No Zero-Variance features. FALSE indicates all features do not have zero variance.
+
+## Table of Near-Zero Variance Variables
+```{r}
+table(nzv$nzv)
+```
+
+
+## Summary of Near-Zero Variance to find 1st quartile cut-off
+```{r}
+summary(nzv$percentUnique)
+```
+
+
+```{r}
+# How many features have Near-Zero Variance
+print(length(nzv[nzv$zeroVar == T, ]))
+
+print(paste('Column count before cutoff:', ncol(df)))
+
+# How many have less than 4.446 `percentUnique`
+dim(nzv[nzv$percentUnique > 4.446,])
+```
+
+## Remove zero and bottom quartile of near-zero variance
+```{r}
+# remove zero & near-zero variance from df_nzv
+df_nzv <- df[c(rownames(nzv[nzv$percentUnique > 4.446, ])) ]
+
+print(paste('Column count after cutoff:', ncol(df_nzv)))
+```
+
+
+# Principal Component Analysis
+
+## Run `prcomp` on `df_nzv` (1302 features)
+
+```{r}
+registerDoMC(cores = 10) # Start multi-processor mode
+start_time <- Sys.time() # Start timer
+
+pmatrix <- scale(df_nzv)
+pca_model <- prcomp(pmatrix)
+
+registerDoSEQ() # Stop multi-processor mode
+end_time <- Sys.time() # End timer
+end_time - start_time # Display elapsed time
+```
+
+
+```{r}
+plot(cumsum(pca_model$sdev^2 / sum(pca_model$sdev^2)), 
+     type = "l",
+     main = "PCA Model: Cumulative Proportion of Variances",
+     xlab = "Feature No.",
+     ylab = "Cumulative Proportion",
+     xlim = c(0, 1350))
+abline(v = 1160, col = "red")
+```
+
+
+See: https://github.com/amunategui/pca-dimension-reduction/blob/master/pca.R
+
+```{r include=FALSE}
+Evaluate_SE <- function(dfEvaluate) {
+        CVs <- 5
+        cvDivider <- floor(nrow(dfEvaluate) / (CVs+1))
+        indexCount <- 1
+        outcomeName <- c('cluster')
+        predictors <- names(dfEvaluate)[!names(dfEvaluate) %in% outcomeName]
+        lsErr <- c()
+        lsAUC <- c()
+        for (cv in seq(1:CVs)) {
+                print(paste('cv', cv))
+                dataTestIndex <- c((cv * cvDivider):(cv * cvDivider + cvDivider))
+                dataTest  <- dfEvaluate[ dataTestIndex,]
+                dataTrain <- dfEvaluate[-dataTestIndex,]
+                
+                bst <- xgboost(data = as.matrix(dataTrain[, predictors]),
+                               label = dataTrain[, outcomeName],
+                               max.depth = 6, eta = 1, verbose = 0,
+                               nround = 5, nthread = 4, 
+                               objective = "reg:squarederror")
+                
+                predictions <- predict(bst, 
+                                       as.matrix(dataTest[, predictors]), 
+                                       outputmargin = TRUE)
+                err <- rmse(dataTest[,outcomeName], predictions)
+                lsErr <- c(lsErr, err)
+                gc()
+        }
+        print(paste('Mean Error:', mean(lsErr)))
+}
+```
+
+## Standard 1: Run model on `df_nzv` data set
+
+```{r echo=TRUE}
+dfEvaluate <- cbind(as.data.frame(sapply(df_nzv, as.numeric)),
+                    cluster = all_proteins$X2)
+
+Evaluate_SE(dfEvaluate)
+```
+
+
+
+```{r eval=FALSE, include=FALSE}
+
+
+
+nComp <- 5  
+nComp <- 10  
+nComp <- 90     
+nComp <- 20  
+nComp <- 50   
+nComp <- 100   
+
+# change nComp to try different numbers of component variables (10 works great)
+nComp <- 10  # 0.9650
+dfComponents <- predict(princ, 
+                        newdata = pmatrix)[, 1:nComp]
+dfEvaluate <- cbind(as.data.frame(dfComponents),
+                    cluster = all_proteins$X2)
+
+EvaluateAUC(dfEvaluate)
+```
+
+
+
+
+

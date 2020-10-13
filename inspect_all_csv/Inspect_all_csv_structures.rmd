@@ -1,0 +1,39 @@
+---
+title: "Compare All .csv files"
+author: "mcc"
+date: "6/14/2020"
+output: html_document
+---
+
+### This is Rmarkdown file shows the preliminary Exploratory Data Analysis for
+
+| No. | File Name | Abbreviation |
+| :- | :- | :- |
+| 1 | Affan_nonAFP_r9493c840_original_twoSeg_AACandDipeptide.csv | Affan_nonAFP |
+| 2 | AFP11.csv | AFP11 |
+| 3 | HumanPrionProteinClean_r1330c840_twoSeg_AACandDipeptide.CSV | HumanPrion |
+| 4 | Non-AFP11.csv | Non-AFP11 |
+
+Data found at https://www.kaggle.com/rafay12/anti-freeze-protein-classification/metadata.
+
+### Import libraries
+```{r setup, include=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "corrplot", "Boruta", "caret", "kableExtra", "doMC")
+
+opts_chunk$set(echo = TRUE)
+```
+
+Load File #1-4
+```{r}
+Affan_nonAFP <- read_csv("Affan_nonAFP_r9493c840_original_twoSeg_AACandDipeptide.csv",
+                         col_names = FALSE)
+
+AFP11 <- read_csv("AFP11.csv", col_names = FALSE)
+
+HumanPrion <- read_csv("HumanPrionProteinClean_r1330c840_twoSeg_AACandDipeptide.CSV", 
+                       col_names = FALSE)
+
+Non_AFP11 <- read_csv("Non-AFP11.csv", 
+                      col_names = FALSE)
+```

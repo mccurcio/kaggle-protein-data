@@ -1,0 +1,192 @@
+---
+title: "EDA of Affan_nonAFP"
+author: "mcc"
+date: "6/11/2020"
+output: html_document
+---
+
+# This is Rmarkdown file shows the preliminary Exploratory Data Analysis for the 'Affan_nonAFP_r9493c840_original_twoSeg_AACandDipeptide.csv' data found at https://www.kaggle.com/rafay12/anti-freeze-protein-classification/metadata.
+
+The file size is: 25 MB. 
+
+Using the CLI and the command a quick visual inspection was carried out.
+
+Note 1: The dataset does not appear to have column names as the first row.
+
+Note 2: The first column contains **Alpha-numerics** and there **May** appear to be some **Underscores** sprinkled about. Check this out.
+
+Note 3: Columns x3-x22 appear to have values #.### format while columns x23-x842 appear as 0.### or 1.### values.
+
+Is Setup:
+
+Column1 - Protein ID
+Column 2 - 0 indicates control set(?) 
+Columns x3-x22 - Amino acid percent Composition(AAC)
+Columns x23-x842 - Dipeptide Composition, etc
+
+# Import libraries
+```{r setup, include=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "RColorBrewer", "corrplot", "Boruta", "caret", "kableExtra", "doMC")
+
+opts_chunk$set(echo = TRUE)
+```
+
+Load Data: 'Affan_nonAFP_r9493c840_original_twoSeg_AACandDipeptide.csv'
+```{r}
+Affan_nonAFP <- read_csv("Affan_nonAFP_r9493c840_original_twoSeg_AACandDipeptide.csv",
+                         col_names = FALSE)
+```
+
+Check Affan_nonAFP dataframe dimensions
+```{r}
+dim(Affan_nonAFP)
+```
+
+Check RAW for missing values
+```{r}
+
+apply(is.na(Affan_nonAFP), 2, which)
+```
+
+Note 4: No missing values indicated.
+
+Numerical summary of COLUMNS x2-x22 of Affan_nonAFP data
+```{r}
+# Subset out columns 2 through 22 for first summary
+aac <- Affan_nonAFP[c(2:22)] 
+summary(aac)
+```
+
+Boxplots: COLUMNS x2-x22 of Affan_nonAFP data
+```{r}
+boxplot(aac, 
+        main = "Boxplots: x2-x22, % Composition Vs Amino Acid",
+        ylab = "% AAC",
+        xlab = "Amino Acid",
+        las = 1)
+```
+
+Q. Is {x4, x9, x21} a member of {cysteine, tyrosine, and tryptophan} ?
+
+Inspection of Columns, x23 to x842
+
+Note 5: Columns x23 to x423 may be dipeptides, since 20 x 20 = 400. 
+
+Other common measures may include but not limited to:
+
+| No. | Name | Reference |
+| :-- | :--- | :-------- |
+| 1 | Pseudo amino acid composition, or PseAAC | Reference [^1] |
+| 2 | Hydrophobicity | Reference |
+| 3 | Hydrophilicity, or PseAAC | Reference |
+| 4 | pK1 (alpha-COOH) | Reference |
+| 5 | pK2 (NH3) | Reference |
+| 6 | pI (at 25C) | Reference |
+| 7 | Autocorrelation Normalized Moreau-Broto Autocorrelation |  Reference [^] |
+| 8 | Moran Autocorrelation |  Reference [^] |
+| 9 | Geary Autocorrelation |  Reference [^] |
+| 10 | CTD	Composition |  Reference [^] |
+| 11 | Transition |  Reference [^] |
+| 12 | Distribution |  Reference [^] |
+| 13 | Conjoint Triad |  Reference [^] |
+| 14 | Quasi-Sequence-Order |  Reference [^] |
+| 15 | Sequence-Order-Coupling Number |  Reference [^] |
+| 16 | Quasi-Sequence-Order Descriptors |  Reference [^] |
+| 17 | Amphiphilic Pseudo-Amino Acid Composition |  Reference [^] |
+
+See also: ProtrWeb: http://protr.org/
+
+[^1]:Hong-Bin Shen and Kuo-Chen Chou. PseAAC: a flexible web-server for generating various kinds of protein pseudo amino acid composition. Analytical Biochemistry, 2008, 373: 386-388
+
+
+## Check for Near-Zero-Variance via Caret
+```{r}
+aac <- Affan_nonAFP[c(23:842)] 
+
+nzv_test <- nearZeroVar(aac, saveMetrics= TRUE)
+dim(nzv_test)
+```
+
+```{r}
+nzv_test[nzv_test$nzv,][1:5,]
+```
+
+### Zero- and Near Zero-Variance Predictors
+```{r}
+nzv <- nearZeroVar(aac)
+filteredDescr <- aac[, -nzv]
+dim(filteredDescr)
+head(filteredDescr)
+```
+
+Note 6: nearZeroVar returned therefore no variables flagged to be problematic.
+
+### Identifying Correlated Predictors
+```{r}
+descrCor <-  cor(filteredDescr)
+highCorr <- sum(abs(descrCor[upper.tri(descrCor)]) > 0.75)
+highCorr
+```
+
+```{r}
+summary(descrCor[upper.tri(descrCor)])
+```
+
+Note 7: The maximum value of Correlations is 0.722812 therefore no variables flagged to be problematic. Generally, It is considered problematic if the correlation(s) is greater than 0.75. Reference [^] 
+
+
+### Linear Dependencies
+
+The function findLinearCombos uses the QR decomposition of a matrix to enumerate sets of linear combinations (if they exist). findLinearCombos will return a list that enumerates these dependencies. For each linear combination, it will incrementally remove columns from the matrix and test to see if the dependencies have been resolved. findLinearCombos will also return a vector of column positions can be removed to eliminate the linear dependencies:
+
+```{r}
+comboInfo <- findLinearCombos(filteredDescr)
+comboInfo
+```
+
+Note 8: No Linear Dependencies among the variables.
+
+
+### Centering and Scaling
+
+```{r}
+aac <- Affan_nonAFP[-2] # Omit Column x2 due to the fact it is all zeros.
+
+set.seed(2020)
+inTrain <- sample(seq(along = aac), length(aac)/2)
+
+training  <- filteredDescr[ inTrain, ]
+test      <- filteredDescr[-inTrain, ]
+trainMDRR <- aac[ inTrain]
+testMDRR  <- aac[-inTrain]
+
+preProcValues <- preProcess(training, method = c("center", "scale"))
+
+trainTransformed <- predict(preProcValues, training)
+testTransformed  <- predict(preProcValues, test)
+```
+
+## Boruta Random Forest Test, aac data
+
+It finds relevant features by comparing original attributes’ importance with importance achievable
+at random, estimated using their permuted copies (shadows).
+Miron Kursa
+
+Perform Boruta search
+NOTE: mcAdj = TRUE: If True, multiple comparisons will be adjusted using the Bonferroni method to α calculate p-values. Therefore, p i ≤ m where α is the desired p-value and m is the total number of null hypotheses.
+
+```{r}
+set.seed(1000)
+registerDoMC(cores = 3) # Start multi-processor mode
+start_time <- Sys.time() # Start timer
+
+boruta_output <- Boruta(Class ~ .,
+data = c_m_class_20[, -1],
+mcAdj = TRUE, # See Note above.
+doTrace = 1) # doTrace = 1, represents non-verbose mode.
+
+#registerDoSEQ() # Stop multi-processor mode
+end_time <- Sys.time() # End timer
+end_time - start_time # Display elapsed time
+```

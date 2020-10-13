@@ -1,0 +1,60 @@
+---
+title: "Compare All .csv files"
+author: "mcc"
+date: "6/14/2020"
+output: html_document
+---
+
+### This is Rmarkdown file shows the preliminary Exploratory Data Analysis for
+
+| No. | File Name     | Abbreviation |
+| :-- | :------------ | :----------- |
+| 1   | AFP11.csv     | AFP          |
+| 2   | Non-AFP11.csv | Non_AFP      |
+
+I will not use the two alternative files because their is no information that I can even glean off the filenames.
+
+Data found at https://www.kaggle.com/rafay12/anti-freeze-protein-classification/metadata.
+
+### Import libraries
+```{r message=FALSE, warning=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "caret", "doMC")
+```
+
+### Load data
+```{r message=FALSE, warning=FALSE}
+afp <- read_csv("AFP11.csv", col_names = FALSE)
+non_afp <- read_csv("Non-AFP11.csv", col_names = FALSE)
+
+all_afp <- rbind(afp, non_afp)
+dim(all_afp)
+```
+
+
+
+### Zero- and Near Zero-Variance Predictors Using **caret**
+```{r}
+afp_scaled <- scale(df, center = TRUE, scale = TRUE)
+
+nzv <- nearZeroVar(afp_3_22, saveMetrics = TRUE)
+head(nzv)
+```
+
+
+
+### Identifying Correlated Predictors
+```{r}
+correlation_matrix <-  cor(afp_3_22)
+
+summary(correlation_matrix[upper.tri(correlation_matrix)])
+
+# If the summary of the correlation matrix had max or min values greater than 0.75 and -0.75 the we could find the locations of the pairs with relative high correlationos.
+#high_correlation <- sum(abs(correlation_matrix[upper.tri(correlation_matrix)]) > 0.75)
+```
+
+
+
+
+
+

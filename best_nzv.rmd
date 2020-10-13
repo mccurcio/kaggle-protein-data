@@ -1,0 +1,164 @@
+---
+title: "Compare All .csv files"
+author: "mcc"
+date: "6/14/2020"
+output: html_document
+---
+
+### This is Rmarkdown file shows the preliminary Exploratory Data Analysis for
+
+| No. | File Name     | Abbreviation |
+| :-- | :------------ | :----------- |
+| 1   | AFP11.csv     | AFP          |
+| 2   | Non-AFP11.csv | Non_AFP      |
+
+I will not use the two alternative files because their is no information that I can even glean off the filenames.
+
+Data found at https://www.kaggle.com/rafay12/anti-freeze-protein-classification/metadata.
+
+### Import libraries
+```{r message=FALSE, warning=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "caret", "doMC")
+```
+
+### Load data
+```{r message=FALSE, warning=FALSE}
+afp <- read_csv("AFP11.csv",
+                col_names = FALSE,
+                col_types = cols(X2 = col_factor(levels = c("0","1"))))
+non_afp <- read_csv("Non-AFP11.csv", 
+                    col_names = FALSE,
+                    col_types = cols(X2 = col_factor(levels = c("0","1"))))
+```
+
+
+```{r}
+afp$X2 <- rep(1, 481)
+non_afp$X2 <- rep(0, 9191)
+
+all_afp <- rbind(afp, non_afp)
+
+dim(all_afp)
+# head(all_afp)
+# tail(all_afp)
+```
+
+Simple Splitting Based on the Outcome
+```{r message=FALSE, warning=FALSE}
+set.seed(3456)
+trainIndex <- createDataPartition(all_afp$X2, 
+                                  p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+all_afp_train <- all_afp[ trainIndex,]
+all_afp_test  <- all_afp[-trainIndex,]
+```
+
+
+### Zero- and Near Zero-Variance Predictors Using **caret**
+```{r}
+nzv <- nearZeroVar(all_afp_train[c(3:1742)], saveMetrics = TRUE)
+head(nzv)
+```
+
+
+```{r}
+summary(nzv$percentUnique)
+```
+
+```{r}
+dim(nzv[nzv$percentUnique > 5.0,])
+```
+
+```{r}
+all_afp_nzv_train <- all_afp_train[c(rownames(nzv[nzv$percentUnique > 5.0,]))]
+dim(all_afp_nzv_train)
+```
+
+# Correlation matrix with p-values
+```{r}
+# See http://goo.gl/nahmV for documentation of this function
+cor.prob <- function (X, dfr = nrow(X) - 2) {
+        R <- cor(X, use="pairwise.complete.obs")
+        above <- row(R) < col(R)
+        r2 <- R[above]^2
+        Fstat <- r2 * dfr/(1 - r2)
+        R[above] <- 1 - pf(Fstat, 1, dfr)
+        R[row(R) == col(R)] <- NA
+        R
+}
+
+# Use this to dump the cor.prob output to a 4 column matrix
+# with row/column indices, correlation, and p-value.
+# See StackOverflow question: http://goo.gl/fCUcQ
+flattenSquareMatrix <- function(m) {
+        if( (class(m) != "matrix") | (nrow(m) != ncol(m))) stop("Must be a square matrix.")
+        if(!identical(rownames(m), colnames(m))) stop("Row and column names must be equal.")
+        ut <- upper.tri(m)
+        data.frame(i = rownames(m)[row(m)[ut]],
+                   j = rownames(m)[col(m)[ut]],
+                   cor=t(m)[ut],
+                   p=m[ut])
+}
+```
+
+
+```{r}
+corMasterList <- flattenSquareMatrix (cor.prob(all_afp_nzv_train))
+print(head(corMasterList, 10))
+```
+
+```{r}
+corList <- corMasterList[order(-abs(corMasterList$cor)),]
+print(head(corList, 10))
+```
+
+
+```{r}
+corList <- corMasterList[order(corMasterList$cor),]
+selectedSub <- subset(corList, (abs(cor) > 0.55))
+selectedSub
+```
+
+
+
+```{r}
+# to get the best variables from original list:
+bestSub <-  sapply(strsplit(as.character(selectedSub$i),'[.]'), "[", 1)
+bestSub <- unique(bestSub)
+
+# or use the variables from top selectedSub:
+bestSub <- as.character(selectedSub$i)
+
+library("corrplot")
+corrplot(all_afp_nzv_train[c(bestSub)],
+         is.corr = FALSE,
+         method = "number")
+```
+
+
+
+
+
+
+
+
+
+
+### Identifying Correlated Predictors
+```{r}
+correlation_matrix <-  cor(afp_3_22)
+
+summary(correlation_matrix[upper.tri(correlation_matrix)])
+
+# If the summary of the correlation matrix had max or min values greater than 0.75 and -0.75 the we could find the locations of the pairs with relative high correlationos.
+#high_correlation <- sum(abs(correlation_matrix[upper.tri(correlation_matrix)]) > 0.75)
+```
+
+
+
+
+
+

@@ -1,0 +1,183 @@
+---
+title: "Feature Redux Using PCA & AFProteins"
+output: html_document
+---
+
+```{r library_setup, message=FALSE, warning=FALSE}
+library(easypackages)
+libraries("knitr", "readr", "caret", "doMC", "xgboost", "Metrics")
+```
+
+# Feature Reduction Using PCA & Anti-Freeze Proteins Using R
+
+| No. | File Name     | Abbreviation |
+| :-- | :------------ | :----------- |
+| 1   | AFP11.csv     | afp          |
+| 2   | Non-AFP11.csv | non_afp      |
+
+The two files AFP11.csv & Non-AFP11.csv have 1742 columns. 
+
+These are:
+
+1. AFP11.csv(4.79 MB) contains 481 observations
+2. Non-AFP11.csv(91.6 MB) contains 9191 observations
+
+Column 1 appears to be a id number.  
+Column 2 is unknown.
+
+#### The datasets as of Aug. 10, 2020 are not properly labeled. Issues with these two datasets are:
+
+1. Column headers (names) not attached, 
+2. Source of the protein database or key words used in the search.
+3. Original protein sequence used to generate feature values and length of the protein sequences would (in this researchers opinion) would be helpful.
+
+#### After cursory investigation the two datasets have 1740 variables out of 1742 columns.
+
+1. Column 1 appears to be the protein ID,
+2. Column 2 is unknown at this time,
+3. Columns 3:23 are presumed to be amino acid compositions,
+4. Columns 24:1710 are presumed to be dipeptide and alternative measures which may include for example;
+   - Amphiphilic Pseudo Amino Acid Composition (APseAAC) Descriptor. 
+   - See R-cran package [protr](https://cran.r-project.org/web/packages/protr/index.html) for more information.
+
+For more information see: https://amunategui.github.io/high-demensions-pca/
+
+Load datasets
+```{r}
+library(readr)
+
+# AFP Positive
+afp <- read_csv("AFP11.csv",
+                col_names = FALSE,
+                col_types = cols(X1 = col_skip(),
+                                 X2 = col_skip()))
+
+# AFP Negative
+non_afp <- read_csv("Non-AFP11.csv", 
+                      col_names = FALSE,
+                      col_types = cols(X1 = col_skip(),
+                                       X2 = col_skip()))
+
+# Bind AFP Positive & Negative into one df
+afp_p_n <- rbind(afp, non_afp)
+```
+
+First step is to reduce the number of features for easier calculations.
+The caret package has the routine 'nearZeroVar'. It determines if a feature has a variance of zero or near-zero.
+
+```{r}
+registerDoMC(cores = 10) # Start multi-processor mode
+start_time <- Sys.time() # Start timer
+
+nzv <- nearZeroVar(afp_p_n, 
+                   names = FALSE,
+                   allowParallel = TRUE,
+                   saveMetrics = TRUE)
+
+end_time <- Sys.time() # End timer
+end_time - start_time # Display time
+registerDoSEQ() # Stop multi-processor mode
+```
+
+```{r}
+print(head(nzv))
+```
+
+
+```{r}
+print("Summary of NZV tabulated Percent Unique values:")
+summary(nzv$percentUnique)
+```
+
+Using the summarized information on the near zero variance features it would be interesting to check if the first quartile could be rejected.
+
+Remove Columns that are Near Zero Variance, as denoted by (nzv == TRUE).
+```{r}
+dim(nzv[nzv$nzv == TRUE, ])
+
+afp_p_n_nzv <- afp_p_n[c(rownames(nzv[nzv$nzv == TRUE, ]))]
+
+print(paste("Columns dropped:", 1740-1584))
+```
+
+
+```{r}
+# Generate 0,1 factors for 2nd column
+afp_numbers <- c(rep(1, 481), rep(0, 9191))
+afp_class <- factor(afp_numbers,
+                    levels = c(0, 1),
+                    labels = c("negative", "positive"))
+
+# Change out 2nd column to factors
+afp_p_n <- cbind(t(afp_class), afp_p_n_nzv)
+
+# str(afp_p_n$X2)
+# head(afp_p_n$X2)
+# tail(afp_p_n$X2)
+dim(afp_p_n)
+```
+ 
+
+```{r}
+EvaluateAUC <- function(dfEvaluate) {
+        CVs <- 5
+        cvDivider <- floor(nrow(dfEvaluate) / (CVs + 1))
+        indexCount <- 1
+        outcomeName <- c('cluster')
+        predictors <- names(dfEvaluate)[!names(dfEvaluate) %in% outcomeName]
+        lsErr <- c()
+        lsAUC <- c()
+        for (cv in seq(1:CVs)) {
+                print(paste('cv', cv))
+                dataTestIndex <- c((cv * cvDivider):(cv * cvDivider + cvDivider))
+                dataTest <- dfEvaluate[dataTestIndex,]
+                dataTrain <- dfEvaluate[-dataTestIndex,]
+                
+                bst <- xgboost(data = as.matrix(dataTrain[,predictors]),
+                               label = dataTrain[,outcomeName],
+                               max.depth = 6, eta = 1, verbose = 0,
+                               nround = 5, nthread = 4, 
+                               objective = "reg:linear")
+                
+                predictions <- predict(bst, 
+                                       as.matrix(dataTest[,predictors]),
+                                       outputmargin=TRUE)
+                err <- rmse(dataTest[,outcomeName], predictions)
+                auc <- auc(dataTest[,outcomeName],predictions)
+                
+                lsErr <- c(lsErr, err)
+                lsAUC <- c(lsAUC, auc)
+                gc()
+        }
+        print(paste('Mean Error:', mean(lsErr)))
+        print(paste('Mean AUC:', mean(lsAUC)))
+}
+
+# EvaluateAUC(dfEvaluate)
+```
+
+
+
+```{r}
+registerDoMC(cores = 10) # Start multi-processor mode
+start_time <- Sys.time() # Start timer
+
+pmatrix <- scale(afp_p_n_nzv)
+pca_ <- prcomp(pmatrix)
+
+end_time <- Sys.time() # End timer
+end_time - start_time # Display time
+registerDoSEQ() # Stop multi-processor mode
+```
+
+
+
+
+
+
+
+
+
+
+
+
