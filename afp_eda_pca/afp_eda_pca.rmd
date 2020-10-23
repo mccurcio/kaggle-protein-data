@@ -13,12 +13,13 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(cache = TRUE,
-                      message = FALSE,
-                      warning = FALSE)
+knitr::opts_chunk$set(cache = TRUE)
 ```
 
 # Abstract
+
+pass
+
 
 # Introduction
 
@@ -101,9 +102,9 @@ See also: ProtrWeb: http://protr.org/   https://nanx.me/papers/protr.pdf
 [^12]: X
 [^13]: J.W. Shen, J. Zhang, X.M. Luo, W.L. Zhu, K.Q. Yu, K.X. Chen, Y.X. Li, H.L. Jiang. Predicting Protein-protein Interactions Based Only on Sequences Information. Proceedings of the National Academy of Sciences. 007, 104, 4337-4341
 [^14]: Kuo-Chen Chou. Prediction of Protein Subcellar Locations by Incorporating Quasi-Sequence-Order Effect. Biochemical and Biophysical Research Communications, 2000, 278, 477-483
-[^15]: A
-[^16]: B
-[^17]: C
+[^15]: X
+[^16]: X
+[^17]: X
 
 **Using the Bash** command line I was able to quickly inspect the 2 datafiles. 
 
@@ -112,19 +113,24 @@ Note 3: The dataset does not appear to have column names as the first row.
 # Exploratory Data Analysis
 
 ## Import libraries
-```{r message=FALSE, warning=FALSE}
-library(easypackages)
-libraries("knitr", "readr", "caret", "kableExtra", "doMC",
-          "ROCR" ,"caret" ,"ggplot2" ,"xgboost" ,"Metrics")
+
+```{r}
+Libraries <- c('knitr', "readr", "caret", "kableExtra", "doMC", "plyr",
+               "pROC" , "ROCR", "ggplot2" ,"xgboost" ,"Metrics")
+for (p in Libraries) {
+    library(p, character.only = TRUE)
+}
 ```
 
 ## Load data
+
 ```{r message=FALSE, warning=FALSE}
 afp     <- read_csv("AFP11.csv", col_names = FALSE)
 non_afp <- read_csv("Non-AFP11.csv", col_names = FALSE)
 ```
 
 ## Check no. dimensions
+
 ```{r}
 dim(afp)
 
@@ -133,6 +139,7 @@ dim(non_afp)
 Note 3: rows & columns
 
 ## Check for missing values
+
 ```{r}
 sum(is.na(afp))
 
@@ -141,20 +148,32 @@ sum(is.na(non_afp))
 
 Note 4: No missing values indicated.
 
-## Set indicator variable (X2) to anti-freeze-proteins (1) & Non-anti-freeze-proteins (0)
+## Set indicator variable (X2) to anti-freeze-proteins (1) & Non-anti-freeze-proteins (0) at approximately 1:1.
+
 ```{r}
 afp$X2     <- rep(1, 481)  # Set indicator variable to 1 for anti-freeze-proteins
 non_afp$X2 <- rep(0, 9191) # Set indicator variable to 0 for NON-anti-freeze-proteins
 
-all_proteins <- rbind(afp, non_afp)
+set.seed(1000)
+sampled_non_afp <- ddply(non_afp, .(X2), function(x) x[sample(nrow(x),500),])  
+  
+df1 <- rbind(afp, sampled_non_afp)
+
+##Shuffle row-wise:
+set.seed(1000)
+all_proteins <- df1[sample(nrow(df1)),]
 
 dim(all_proteins)
+```
+
+```{r}
+head(all_proteins)
 ```
 
 ## Amino Acid Composition: Numerical range of columns X3 - X23
 
 ```{r}
-aac <- all_proteins[c(3:23)] 
+aac <- all_proteins[c(3)] 
 
 ranges_aac <- range(aac)
 
@@ -164,7 +183,7 @@ ranges_aac
 ## Protein Descriptors: Numerical range of columns X24 - X1742
 
 ```{r}
-dpc <- all_proteins[c(24:1742)] 
+dpc <- all_proteins[c(24)] 
 
 ranges_dpc <- range(dpc)
 
@@ -174,6 +193,10 @@ ranges_dpc
 Note 5: It is recommended that all columnar variables (X3 - X1742) be normalized.
 
 # Zero Variance & Near-Zero Variance Testing
+
+The Zero Variance and Near-Zero Variance tests belong within the [R/caret](https://topepo.github.io/caret/) package written by [Max Kuhn](http://appliedpredictivemodeling.com/). 
+
+Sparse matrices are quite common and can be problematic for certain calculations. Biological data is no different. In order to easily reduce the number of features within biological data one can test if features have no variance or very little variance. When using the `caret::nearZeroVar(df, saveMetrics = TRUE)` the output is an N by 4 matrix. Both column 3 and 4 return a boolean values where column 3 is labeled **zeroVar** column 4 is labeled **nzv**.  The frequency ratio (`freqRatio`) and percent unique (`percentUnique`) provide numeric values that can allow more or less stringent parsing of observations to use or not.
 
 ## Check for Near-Zero Variance using Caret
 
@@ -189,51 +212,57 @@ head(nzv)
 table(nzv$zeroVar)
 ```
 
-Note 6: No Zero-Variance features. FALSE indicates all features do not have zero variance.
+Note 6: No Zero-Variance features. FALSE indicates NO features have variance equal to zero.
 
 ## Table of Near-Zero Variance Variables
+
 ```{r}
 table(nzv$nzv)
 ```
 
+Note 7: The table above "Near-Zero Variance" shows that 517 out of the 1740 have Near-Zero Variance. 
+
+???? Conversely 1223 features have sufficient variance where the percent unique of values in the 
+
+Reducing the number of features to 154 is to drastic as a first step therefore reducing the bottom quartile of Nea-Zero variances will be used first.
 
 ## Summary of Near-Zero Variance to find 1st quartile cut-off
+
 ```{r}
 summary(nzv$percentUnique)
 ```
 
+Note 8: Using the first quartile value of 8.9450 will reduce the number of features by approximately 1/4.
 
 ```{r}
 # How many features have Near-Zero Variance
-print(length(nzv[nzv$zeroVar == T, ]))
+print(length(nzv[nzv$zeroVar == TRUE, ]))
 
 print(paste('Column count before cutoff:', ncol(df)))
-
-# How many have less than 4.446 `percentUnique`
-dim(nzv[nzv$percentUnique > 4.446,])
 ```
 
 ## Remove zero and bottom quartile of near-zero variance
+
 ```{r}
 # remove zero & near-zero variance from df_nzv
-df_nzv <- df[c(rownames(nzv[nzv$percentUnique > 4.446, ])) ]
+df_nzv <- df[c(rownames(nzv[nzv$percentUnique > 8.9450, ])) ]
 
 print(paste('Column count after cutoff:', ncol(df_nzv)))
 ```
 
+Note 9: 1305 features remain after cutting the first quartile at 8.970 from dataframe `nzv$percentUnique`.
+By cutting the bottom quartile of features with Non-Unique values we can reduce the number by 429 to a total of 1311. These 1311 feautures will be used in subsequent work because they are deemed to have a greater deal of variance than the lower quarter.
 
 # Principal Component Analysis
 
-## Run `prcomp` on `df_nzv` (1302 features)
+## Run `prcomp` on `df_nzv` (1311 features)
 
 ```{r}
-registerDoMC(cores = 10) # Start multi-processor mode
 start_time <- Sys.time() # Start timer
 
 pmatrix <- scale(df_nzv)
 pca_model <- prcomp(pmatrix)
 
-registerDoSEQ() # Stop multi-processor mode
 end_time <- Sys.time() # End timer
 end_time - start_time # Display elapsed time
 ```
@@ -243,10 +272,12 @@ end_time - start_time # Display elapsed time
 plot(cumsum(pca_model$sdev^2 / sum(pca_model$sdev^2)), 
      type = "l",
      main = "PCA Model: Cumulative Proportion of Variances",
+     sub = "Red bar = 90% of overall variance (~450 Usable Features)",
      xlab = "Feature No.",
      ylab = "Cumulative Proportion",
      xlim = c(0, 1350))
-abline(v = 1160, col = "red")
+abline(v = 450, col = "red")
+abline(h = 0.9, col = "red")
 ```
 
 
@@ -267,7 +298,7 @@ Evaluate_SE <- function(dfEvaluate) {
                 dataTest  <- dfEvaluate[ dataTestIndex,]
                 dataTrain <- dfEvaluate[-dataTestIndex,]
                 
-                bst <- xgboost(data = as.matrix(dataTrain[, predictors]),
+                bst <- xgboost(data = as.matrix(dataTrain[,predictors]),
                                label = dataTrain[, outcomeName],
                                max.depth = 6, eta = 1, verbose = 0,
                                nround = 5, nthread = 4, 
@@ -276,11 +307,17 @@ Evaluate_SE <- function(dfEvaluate) {
                 predictions <- predict(bst, 
                                        as.matrix(dataTest[, predictors]), 
                                        outputmargin = TRUE)
-                err <- rmse(dataTest[,outcomeName], predictions)
+                err <- rmse(dataTest[, outcomeName], predictions)
+                auc <- auc(dataTest[, outcomeName], predictions)
+                
                 lsErr <- c(lsErr, err)
+                lsAUC <- c(lsAUC, auc)
                 gc()
         }
         print(paste('Mean Error:', mean(lsErr)))
+        mean_auc <- mean(lsAUC)
+        print(paste('Mean AUC:', mean(lsAUC)))
+        return(mean_auc)
 }
 ```
 
@@ -294,29 +331,31 @@ Evaluate_SE(dfEvaluate)
 ```
 
 
+```{r}
+nComp = list(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 40, 80, 160)
 
-```{r eval=FALSE, include=FALSE}
-
-
-
-nComp <- 5  
-nComp <- 10  
-nComp <- 90     
-nComp <- 20  
-nComp <- 50   
-nComp <- 100   
-
-# change nComp to try different numbers of component variables (10 works great)
-nComp <- 10  # 0.9650
-dfComponents <- predict(princ, 
-                        newdata = pmatrix)[, 1:nComp]
-dfEvaluate <- cbind(as.data.frame(dfComponents),
-                    cluster = all_proteins$X2)
-
-EvaluateAUC(dfEvaluate)
+# change nComp to try different numbers of component variables, to find best values
+auc_vs_pc <- c()
+for(i in nComp) {
+        dfComponents <- predict(pca_model, newdata = pmatrix)[, 1:i]
+        
+        dfEvaluate <- cbind(as.data.frame(dfComponents),
+                            cluster = all_proteins$X2)
+        mean_auc <- Evaluate_SE(dfEvaluate)
+        auc_vs_pc <- c(auc_vs_pc, mean_auc)
+}
 ```
 
 
+```{r}
+auc_vs_pc
+```
+MAX value at PC = 6
 
-
+```{r}
+pc = c(1:10, 20, 40, 80, 160)
+plot(x = pc, y = auc_vs_pc, 
+     type = "b",
+     ylim = c(0.5, 0.9))
+```
 
